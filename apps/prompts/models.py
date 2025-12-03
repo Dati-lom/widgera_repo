@@ -2,9 +2,8 @@ from django.conf import settings
 from django.db import models
 
 
+#promt schema model for history
 class PromptSchema(models.Model):
-    """Reusable schema that stores the structure of an LLM response."""
-
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -23,10 +22,8 @@ class PromptSchema(models.Model):
     def __str__(self) -> str:  # pragma: no cover - readability only
         return f"{self.name} ({self.user.username})"
 
-
+#Field definition for prompt schema
 class SchemaField(models.Model):
-    """Field definition for a schema."""
-
     class FieldType(models.TextChoices):
         STRING = 'string', 'String'
         NUMBER = 'number', 'Number'
@@ -54,22 +51,27 @@ class SchemaField(models.Model):
 
 
 def user_image_upload_to(instance: 'UploadedImage', filename: str) -> str:
-    """Group uploads per user so S3 or local storage remains tidy."""
     return f"users/{instance.user_id}/uploads/{filename}"
 
-
+#image for history
 class UploadedImage(models.Model):
-    """Image uploaded by the user for prompt executions."""
-
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='uploaded_images'
     )
-    file = models.ImageField(upload_to=user_image_upload_to)
+    file = models.ImageField(upload_to=user_image_upload_to, blank=True, null=True)
+    image_url = models.URLField(blank=True)
     checksum = models.CharField(max_length=64)
     original_filename = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    def calculate_hash(file_content: bytes) -> str:
+        import hashlib
+
+        sha256 = hashlib.sha256()
+        sha256.update(file_content)
+        return sha256.hexdigest()
 
     class Meta:
         constraints = [
@@ -83,10 +85,8 @@ class UploadedImage(models.Model):
     def __str__(self) -> str:  # pragma: no cover - readability only
         return f"Image {self.id} for {self.user.username}"
 
-
+#prompt execution history
 class PromptExecution(models.Model):
-    """Prompt + schema + image execution tracked per user."""
-
     class Status(models.TextChoices):
         PENDING = 'pending', 'Pending'
         RUNNING = 'running', 'Running'

@@ -1,0 +1,193 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Prompt Builder</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <style>
+        body { background-color: #f7f9fb; }
+        .field-row { border: 1px solid #e3e7ec; border-radius: 0.5rem; padding: 1rem; background: #fff; }
+        .field-row + .field-row { margin-top: 0.75rem; }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="mb-4 text-center">
+                    <h1 class="fw-bold">Example User Experience</h1>
+                    <p class="text-muted mb-0">Define your response schema, attach an image, and get structured answers.</p>
+                </div>
+                <div class="card shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-end">
+                            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#historyModal">
+                                Check History
+                            </button>
+                        </div>
+                        <form method="post" enctype="multipart/form-data" class="vstack gap-4 mt-2">
+                            {% csrf_token %}
+                            <div>
+                                <label class="form-label fw-semibold">Prompt</label>
+                                <textarea class="form-control" name="prompt_text" rows="4" placeholder="Ask the LLM something..." required>{{ prompt_text }}</textarea>
+                            </div>
+                            <div>
+                                <label class="form-label fw-semibold">Image (optional)</label>
+                                <input type="file" class="form-control" name="image" accept="image/*">
+                                {% if image_preview_url %}
+                                    <small class="text-muted d-block mt-2">Last uploaded image: <a href="{{ image_preview_url }}" target="_blank" rel="noopener">preview</a></small>
+                                {% endif %}
+                                {% if image_notice %}
+                                    <small class="text-warning d-block">{{ image_notice }}</small>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label fw-semibold mb-0">Response Structure</label>
+                                    <button id="add-field-btn" type="button" class="btn btn-primary btn-sm">+ Add Field</button>
+                                </div>
+                                <div id="fields-container" class="vstack"></div>
+                            </div>
+                            <div>
+                                <button type="submit" class="btn btn-success w-100 py-3 fw-semibold">Submit</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                {% if error_message %}
+                    <div class="alert alert-danger mt-4" role="alert">
+                        {{ error_message }}
+                    </div>
+                {% endif %}
+
+                {% if structured_output %}
+                    <div class="card shadow-sm mt-4">
+                        <div class="card-header bg-dark text-white">
+                            Structured Output
+                        </div>
+                        <div class="card-body">
+                            {% for key, value in structured_output.items %}
+                                <p class="mb-1"><strong>{{ key }}:</strong> {{ value }}</p>
+                            {% empty %}
+                                <p class="text-muted mb-0">No structured data returned.</p>
+                            {% endfor %}
+                        </div>
+                        {% if llm_usage %}
+                            <div class="card-footer small text-muted">
+                                Tokens — Prompt: {{ llm_usage.prompt_tokens }}, Completion: {{ llm_usage.completion_tokens }}, Total: {{ llm_usage.total_tokens }}
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {{ field_rows|json_script:"initial-field-data" }}
+
+    <div class="modal fade" id="historyModal" tabindex="-1" aria-labelledby="historyModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="historyModalLabel">Prompt History</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {% if history %}
+                        <div class="list-group">
+                            {% for item in history %}
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h6 class="mb-1">Prompt</h6>
+                                            <p class="mb-2 text-muted small">{{ item.prompt_text }}</p>
+                                        </div>
+                                        <small class="text-muted">{{ item.created_at|date:"Y-m-d H:i" }}</small>
+                                    </div>
+                                    {% if item.image_url %}
+                                        <div class="mb-2">
+                                            <a href="{{ item.image_url }}" target="_blank" rel="noopener" class="btn btn-link p-0">View Image</a>
+                                        </div>
+                                    {% endif %}
+                                    <div class="bg-light p-2 rounded">
+                                        <pre class="mb-0 small">{{ item.result_data|json_script:"result-"|default:item.result_data }}</pre>
+                                    </div>
+                                    <div class="mt-2 text-muted small">Model: {{ item.model_name }}</div>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted mb-0">No history yet. Submit a prompt to get started.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <template id="field-template">
+        <div class="field-row" data-field-row>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-7">
+                    <label class="form-label">Field Name</label>
+                    <input type="text" class="form-control" name="field_names[]" placeholder="e.g., inventorFullName">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" name="field_types[]">
+                        <option value="string">String</option>
+                        <option value="number">Number</option>
+                    </select>
+                </div>
+                <div class="col-md-1 text-end">
+                    <button type="button" class="btn btn-outline-danger" data-remove-field>&times;</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script>
+        const fieldsContainer = document.getElementById('fields-container');
+        const addFieldButton = document.getElementById('add-field-btn');
+        const fieldTemplate = document.getElementById('field-template');
+        const initialDataElement = document.getElementById('initial-field-data');
+
+        const createFieldRow = (name = '', type = 'string') => {
+            const fragment = fieldTemplate.content.cloneNode(true);
+            const row = fragment.querySelector('[data-field-row]');
+            const nameInput = row.querySelector('input[name="field_names[]"]');
+            const typeSelect = row.querySelector('select[name="field_types[]"]');
+            nameInput.value = name;
+            typeSelect.value = type;
+            row.querySelector('[data-remove-field]').addEventListener('click', () => {
+                if (fieldsContainer.childElementCount > 1) {
+                    row.remove();
+                }
+            });
+            fieldsContainer.appendChild(fragment);
+        };
+
+        addFieldButton.addEventListener('click', () => createFieldRow());
+
+        const hydrate = () => {
+            let initialFields = [];
+            if (initialDataElement) {
+                try {
+                    initialFields = JSON.parse(initialDataElement.textContent);
+                } catch (err) {
+                    initialFields = [];
+                }
+            }
+            if (!initialFields.length) {
+                initialFields = [{ name: '', field_type: 'string' }];
+            }
+            initialFields.forEach(field => createFieldRow(field.name || '', field.field_type || 'string'));
+        };
+
+        hydrate();
+    </script>
+</body>
+</html>
